@@ -1,0 +1,139 @@
+#!/usr/bin/env ruby
+# encoding: utf-8
+#
+# Check git status for a ~/projects dirtree
+AppVersion = 'v0.2023.12.06'
+AppName = 'check-repos'
+#
+require 'pathname'
+require 'open3'
+
+def dir_tree( arg )
+  package_dir_tree = Array.new
+  begin
+    Dir.chdir( arg ) { |d| package_dir_tree = Dir[ "**/.git" ] }
+  rescue
+    exit FILE_ACCESS_ERROR
+  end
+  return package_dir_tree
+end
+
+# returns [ branch.str, detached.bool, behind.int, ahead.int ]
+def parse_branch( line )
+  if not line
+    return [ '', false, 0, 0 ]
+  end
+  
+  if line.start_with? '## '
+    line = line[ 3.. ]
+  end
+  
+  match = line.match /^Initial commit on (.+)$/
+  unless match.nil?
+    return [ match[1], false, 0, 0 ]
+  end
+
+  match = line.match /^(.+) \(no branch\)$/
+  unless match.nil?
+    return [ match[1], true, 0, 0 ]
+  end
+
+  match = line.match /^(.+?)\.\.\./
+  unless match.nil?
+    branch = match[1]
+
+    match = line.match /\[ahead (\d+), behind (\d+)\]$/
+    unless match.nil?
+      return [ branch, false, match[2].to_i, match[1].to_i ]
+    end
+
+    match = line.match /\[ahead (\d+)\]$/
+    unless match.nil?
+      return [ branch, false, 0, match[1].to_i ]
+    end
+
+    match = line.match /\[behind (\d+)\]$/
+    unless match.nil?
+      return [ branch, false, match[1], 0 ]
+    end
+
+    return [ branch, false, 0, 0 ]
+
+  end
+
+  return [ line, false, 0, 0 ]
+end
+
+def parse_status(line)
+  lines = line.split "\n"
+  staged, unmerged, changed, untracked = [], [], [], []
+
+  staged << true if lines[0].include? 'MRC' or (lines[0] == 'D' and lines[1] != 'D') or (lines[0] == 'A' and lines[1] != 'A')
+  unmerged << true if lines[0] == 'U' or lines[1] == 'U' or (lines[0] == 'A' and lines[1] == 'A') or (lines[0] == 'D' and lines[1] == 'D')
+  changed << true if lines[1] == 'M' or (lines[1] == 'D' and lines[0] != 'D')
+  untracked << true if lines[0] == '?'
+
+  return [ staged.size, unmerged.size, changed.size, untracked.size ]
+end
+
+show_tag = false
+formats = {}
+detached_head_style = 'revision'
+untracked_not_dirty = false
+
+projectsdir = Pathname.new( File.join( ENV['HOME'], 'projects' ) )
+paths = dir_tree projectsdir
+
+paths.each do |path|
+  unless File.basename( path ) =~ /^\.git$/
+    next
+  else
+    git_dir = File.join( projectsdir, path )
+    work_tree = File.dirname git_dir
+    git_base = "git  -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree }"
+    
+    git_status, err, status = Open3.capture3( git_base + " status --branch --porcelain" )
+
+    puts "work_tree: #{ work_tree }"
+
+    branch, detached, behind, ahead = parse_branch( git_status )
+
+    if branch.empty?
+      next
+    end
+
+    if branch == 'HEAD'
+      if detached_head_style == 'revision'
+        branch = Open3.capture3( git_base + ' rev-parse --short HEAD' )
+      elsif
+        branch = Open3.capture3( git_base + ' describe --contains --all' )
+      end
+    end
+
+    staged, unmerged, changed, untracked = parse_status( git_status )
+
+    stashed = Open3.capture3( git_base + ' stash list --no-decorate' )
+
+    if show_tag == false
+      tag, err = [ '' ], false
+    elsif show_tag == 'contains'
+      tag, err = Open3.capture3( git_base + ' describe --contains' )
+    elsif show_tag == 'last'
+      tag, err = Open3.capture3( git_base + ' describe --tags' )
+    elsif show_tag == 'annotated'
+      tag, err = Open3.capture3( git_base + ' describe' )
+    else
+      tag, err = Open3.capture3( git_base + ' describe --tags --exact-match --abbrev=0' )
+    end
+
+    if err and ( err.include? 'error' or err.include? 'fatal' or err.include? 'Could not get sha1 for HEAD' )
+      tag = ''
+    end
+
+    # tbc build_segments
+    puts [ staged, unmerged, changed, untracked, tag, err ].join ' - '
+    #
+
+  end # /^\.git$/
+end # paths.each
+
