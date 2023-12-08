@@ -2,8 +2,9 @@
 # encoding: utf-8
 #
 # Check git status for a ~/projects dirtree
-AppVersion = 'v0.2023.12.06'
-AppName = 'check-repos'
+#
+AppVersion = 'v0.2023.12.08'
+AppName = 'treeg'
 #
 require 'pathname'
 require 'open3'
@@ -16,56 +17,43 @@ def dir_tree( arg )
     exit FILE_ACCESS_ERROR
   end
   return package_dir_tree
-end
+end # dir_tree
 
 # returns [ branch.str, detached.bool, behind.int, ahead.int ]
 def parse_branch( line )
-  if not line
-    return [ '', false, 0, 0 ]
-  end
+  return [ '', false, 0, 0 ] if not line
   
-  if line.start_with? '## '
-    line = line[ 3.. ]
-  end
+  line = line[ 3.. ] if line.start_with? '## '
   
   match = line.match /^Initial commit on (.+)$/
-  unless match.nil?
-    return [ match[1], false, 0, 0 ]
-  end
+  return [ match[1], false, 0, 0 ] unless match.nil?
 
   match = line.match /^(.+) \(no branch\)$/
-  unless match.nil?
-    return [ match[1], true, 0, 0 ]
-  end
+  return [ match[1], true, 0, 0 ] unless match.nil?
 
   match = line.match /^(.+?)\.\.\./
   unless match.nil?
     branch = match[1]
 
     match = line.match /\[ahead (\d+), behind (\d+)\]$/
-    unless match.nil?
-      return [ branch, false, match[2].to_i, match[1].to_i ]
-    end
+    return [ branch, false, match[2].to_i, match[1].to_i ] unless match.nil?
 
     match = line.match /\[ahead (\d+)\]$/
-    unless match.nil?
-      return [ branch, false, 0, match[1].to_i ]
-    end
+    return [ branch, false, 0, match[1].to_i ] unless match.nil?
 
     match = line.match /\[behind (\d+)\]$/
-    unless match.nil?
-      return [ branch, false, match[1], 0 ]
-    end
+    return [ branch, false, match[1], 0 ] unless match.nil?
 
     return [ branch, false, 0, 0 ]
-
   end
 
   return [ line, false, 0, 0 ]
-end
+end # parse_branch
 
 def parse_status(line)
+  puts "parse_status line: #{line.inspect}"
   lines = line.split "\n"
+  puts "parse_status lines: #{lines.inspect}"
   staged, unmerged, changed, untracked = [], [], [], []
 
   staged << true if lines[0].include? 'MRC' or (lines[0] == 'D' and lines[1] != 'D') or (lines[0] == 'A' and lines[1] != 'A')
@@ -74,17 +62,42 @@ def parse_status(line)
   untracked << true if lines[0] == '?'
 
   return [ staged.size, unmerged.size, changed.size, untracked.size ]
-end
+end # parse_status
+
+def build_segments( branch, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
+  # if detached
+  # elsif staged or unmerged or changed or ( untracked and not untracked_not_dirty )
+  # else
+  # end
+
+  #segments = [ " \ue0a0 #{ branch }" ] # branch symbol, no name
+  segments = [ " ✜ #{ branch }" ]
+
+  # FIXME tag (tag is [""] - not empty)
+  segments << " \u2605 #{ tag }" unless tag.empty? # Black Star (U+2605)
+  segments << " ↓ #{ behind }" if behind.nonzero?    
+  segments << " ↑ #{ ahead }" if ahead.nonzero?     
+  segments << " ● #{ staged }" if staged.nonzero?    
+  segments << " x #{ unmerged }" if unmerged.nonzero?  
+  segments << " ✚ #{ changed }" if changed.nonzero?   
+  segments << " … #{ untracked }" if untracked.nonzero? 
+  segments << " ⚑ #{ stashed }" if stashed            
+
+  return segments
+
+end # build_segments
+
 
 show_tag = false
-formats = {}
 detached_head_style = 'revision'
 untracked_not_dirty = false
 
 projectsdir = Pathname.new( File.join( ENV['HOME'], 'projects' ) )
 paths = dir_tree projectsdir
 
-paths.each do |path|
+
+#paths.each do |path|
+[ 'backports/.git' ].each do |path|
   unless File.basename( path ) =~ /^\.git$/
     next
   else
@@ -92,38 +105,42 @@ paths.each do |path|
     work_tree = File.dirname git_dir
     git_base = "git  -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree }"
     
-    git_status, err, status = Open3.capture3( git_base + " status --branch --porcelain" )
+    git_status_call = git_base + " status --branch --porcelain"
+    puts "git_status_call: #{git_status_call}"
+    git_status, err, status = Open3.capture3( git_status_call )
+    puts "git_status: #{git_status.inspect} -- err: #{err.inspect} -- status: #{status.inspect}"
 
-    puts "work_tree: #{ work_tree }"
 
     branch, detached, behind, ahead = parse_branch( git_status )
 
-    if branch.empty?
-      next
-    end
+    next if branch.empty?
 
     if branch == 'HEAD'
       if detached_head_style == 'revision'
-        branch = Open3.capture3( git_base + ' rev-parse --short HEAD' )
-      elsif
-        branch = Open3.capture3( git_base + ' describe --contains --all' )
+        branch, err, status = Open3.capture3( git_base + ' rev-parse --short HEAD' )[0][0]
+      elsif detached_head_style == 'ref'
+        branch, err, status = Open3.capture3( git_base + ' describe --contains --all' )[0][0]
       end
     end
 
     staged, unmerged, changed, untracked = parse_status( git_status )
 
-    stashed = Open3.capture3( git_base + ' stash list --no-decorate' )
+    git_stashed_call = git_base + ' stash list --no-decorate'
+    puts "git_stashed_call: #{git_stashed_call}"
+    stashed, err, status = Open3.capture3( git_stashed_call )
+    puts "stashed: #{stashed.inspect} -- err: #{err.inspect} -- status: #{status.inspect}"
+
 
     if show_tag == false
       tag, err = [ '' ], false
     elsif show_tag == 'contains'
-      tag, err = Open3.capture3( git_base + ' describe --contains' )
+      tag, err, status = Open3.capture3( git_base + ' describe --contains' )
     elsif show_tag == 'last'
-      tag, err = Open3.capture3( git_base + ' describe --tags' )
+      tag, err, status = Open3.capture3( git_base + ' describe --tags' )
     elsif show_tag == 'annotated'
-      tag, err = Open3.capture3( git_base + ' describe' )
+      tag, err, status = Open3.capture3( git_base + ' describe' )
     else
-      tag, err = Open3.capture3( git_base + ' describe --tags --exact-match --abbrev=0' )
+      tag, err, status = Open3.capture3( git_base + ' describe --tags --exact-match --abbrev=0' )
     end
 
     if err and ( err.include? 'error' or err.include? 'fatal' or err.include? 'Could not get sha1 for HEAD' )
@@ -131,8 +148,9 @@ paths.each do |path|
     end
 
     # tbc build_segments
-    puts [ staged, unmerged, changed, untracked, tag, err ].join ' - '
-    #
+    segments = build_segments( branch, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
+    puts [ work_tree, segments.join( ' ' ) ].join ':'
+    puts '------------'
 
   end # /^\.git$/
 end # paths.each
