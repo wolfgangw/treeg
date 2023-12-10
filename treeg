@@ -1,26 +1,46 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
 #
-# Check git status for a ~/projects dirtree
+# treeg searches filetrees for git repositories
+# and prints a status summary for each
 #
-AppVersion = 'v0.2023.12.08'
-AppName = 'treeg'
+# /tri:dʒiː/
+# Wolfgang Woehl 2023
+# :wq 
 #
-require 'pathname'
+AppName = File.basename( $0 )
+AppVersion = 'v0.2023.12.10'
+AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
+#
 require 'open3'
 
-def dir_tree( arg )
-  package_dir_tree = Array.new
-  begin
-    Dir.chdir( arg ) { |d| package_dir_tree = Dir[ "**/.git" ] }
-  rescue
-    exit FILE_ACCESS_ERROR
-  end
-  return package_dir_tree
-end # dir_tree
+git_dirs = Array.new
+config = {
+  :configfile => AppConfigFile,
+  :configfile_exists => false,
+  :shellargs_present => false,
+  :sortmodified => true,
+  :printlegend => true,
+  :hideclean => false,
+  :colored => true,
+  :colors => ['black', 'red', 'green', 'brown', 'blue', 'magenta', 'cyan', 'gray'],
+  :dirty => 'cyan',
+  :detached => 'gray',
+  :clean => 'green',
+  :paths => [],
+}
 
-# returns [ branch.str, detached.bool, behind.int, ahead.int ]
+def find_git_dirs( path )
+  git_dirs = Array.new
+  Dir.chdir( path ) { |d| git_dirs = Dir[ "**/.git" ] }
+  git_dirs.each_with_index do |childdir, index|
+    git_dirs[index] = File.join( path, childdir )
+  end
+  return git_dirs
+end
+
 def parse_branch( line )
+  line = line.split( "\n" )[0]
   return [ '', false, 0, 0 ] if not line
   
   line = line[ 3.. ] if line.start_with? '## '
@@ -50,108 +70,208 @@ def parse_branch( line )
   return [ line, false, 0, 0 ]
 end # parse_branch
 
-def parse_status(line)
-  puts "parse_status line: #{line.inspect}"
-  lines = line.split "\n"
-  puts "parse_status lines: #{lines.inspect}"
-  staged, unmerged, changed, untracked = [], [], [], []
+def parse_status( line )
+  lines = line.split("\n").map { |l| l.chomp }
+  staged, unmerged, changed, untracked = 0, 0, 0, 0
 
-  staged << true if lines[0].include? 'MRC' or (lines[0] == 'D' and lines[1] != 'D') or (lines[0] == 'A' and lines[1] != 'A')
-  unmerged << true if lines[0] == 'U' or lines[1] == 'U' or (lines[0] == 'A' and lines[1] == 'A') or (lines[0] == 'D' and lines[1] == 'D')
-  changed << true if lines[1] == 'M' or (lines[1] == 'D' and lines[0] != 'D')
-  untracked << true if lines[0] == '?'
+  lines.each do |l|
+    staged += 1 if l[0].include? 'MRC' or (l[0][0] == 'D' and l[1][0] != 'D') or (l[0][0] == 'A' and l[1][0] != 'A')
+    unmerged += 1 if l[0][0] == 'U' or l[1][0] == 'U' or (l[0][0] == 'A' and l[1][0] == 'A') or (l[0][0] == 'D' and l[1][0] == 'D')
+    changed += 1 if l[1][0] == 'M' or (l[1][0] == 'D' and l[0][0] != 'D')
+    untracked += 1 if l[0][0] == '?'
+  end
 
-  return [ staged.size, unmerged.size, changed.size, untracked.size ]
+  return [ staged, unmerged, changed, untracked ]
 end # parse_status
 
-def build_segments( branch, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
-  # if detached
-  # elsif staged or unmerged or changed or ( untracked and not untracked_not_dirty )
-  # else
-  # end
+def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
+  segments = [ " #{ detached ? '✜detached (' + branch + ')' : '✜' + branch }" ]
+  segments << " \u2605#{ tag }" if ! tag[0].nil? #tag[0].empty? # Black Star (U+2605)
+  segments << " ↓#{ behind }" if behind.nonzero?
+  segments << " ↑#{ ahead }" if ahead.nonzero?
+  segments << " ●#{ staged }" if staged.nonzero?
+  segments << " x#{ unmerged }" if unmerged.nonzero?
+  segments << " ✚#{ changed }" if changed.nonzero?
+  segments << " …#{ untracked }" if untracked.nonzero?
+  segments << " ⚑#{ stashed.split("\n").size } stash#{ stashed.split("\n").size != 1 ? 'es' : '' }" if ! stashed.empty?
 
-  #segments = [ " \ue0a0 #{ branch }" ] # branch symbol, no name
-  segments = [ " ✜ #{ branch }" ]
+  summary = segments.join(' ') + ' '
+  return summary
+end # build_summary
 
-  # FIXME tag (tag is [""] - not empty)
-  segments << " \u2605 #{ tag }" unless tag.empty? # Black Star (U+2605)
-  segments << " ↓ #{ behind }" if behind.nonzero?    
-  segments << " ↑ #{ ahead }" if ahead.nonzero?     
-  segments << " ● #{ staged }" if staged.nonzero?    
-  segments << " x #{ unmerged }" if unmerged.nonzero?  
-  segments << " ✚ #{ changed }" if changed.nonzero?   
-  segments << " … #{ untracked }" if untracked.nonzero? 
-  segments << " ⚑ #{ stashed }" if stashed            
+def parse_config( config )
+  File.read( config[ :configfile ] ).split( "\n" ).each do |line|
+    line = line.chomp.strip
+    if line =~ /^#/ or line =~ /^\s*$/
+      next
+    end
 
-  return segments
-
-end # build_segments
-
-
-show_tag = false
-detached_head_style = 'revision'
-untracked_not_dirty = false
-
-projectsdir = Pathname.new( File.join( ENV['HOME'], 'projects' ) )
-paths = dir_tree projectsdir
-
-
-#paths.each do |path|
-[ 'backports/.git' ].each do |path|
-  unless File.basename( path ) =~ /^\.git$/
-    next
-  else
-    git_dir = File.join( projectsdir, path )
-    work_tree = File.dirname git_dir
-    git_base = "git  -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree }"
-    
-    git_status_call = git_base + " status --branch --porcelain"
-    puts "git_status_call: #{git_status_call}"
-    git_status, err, status = Open3.capture3( git_status_call )
-    puts "git_status: #{git_status.inspect} -- err: #{err.inspect} -- status: #{status.inspect}"
-
-
-    branch, detached, behind, ahead = parse_branch( git_status )
-
-    next if branch.empty?
-
-    if branch == 'HEAD'
-      if detached_head_style == 'revision'
-        branch, err, status = Open3.capture3( git_base + ' rev-parse --short HEAD' )[0][0]
-      elsif detached_head_style == 'ref'
-        branch, err, status = Open3.capture3( git_base + ' describe --contains --all' )[0][0]
+    # brute force File.exist? through lines first (whitespace in paths)
+    if File.exist?( File.expand_path( line ) )
+      config[ :paths ] += [ File.expand_path( line) ]
+    else
+      option = line.split( /\s+/ )
+      if option.size == 2
+        key = option[0].to_sym
+        value = option[1]
+        if config.key? key
+          case value
+          when 'yes'
+            config[key] = true
+          when 'no'
+            config[key] = false
+          end
+          if config[:colors].include? value
+            config[key] = value
+          end
+        end
+      else
       end
     end
+  end
+  return config
+end
 
-    staged, unmerged, changed, untracked = parse_status( git_status )
+class String
+  def black;   "\e[30m#{self}\e[0m" end
+  def red;     "\e[31m#{self}\e[0m" end
+  def green;   "\e[32m#{self}\e[0m" end
+  def brown;   "\e[33m#{self}\e[0m" end
+  def blue;    "\e[34m#{self}\e[0m" end
+  def magenta; "\e[35m#{self}\e[0m" end
+  def cyan;    "\e[36m#{self}\e[0m" end
+  def gray;    "\e[37m#{self}\e[0m" end
 
-    git_stashed_call = git_base + ' stash list --no-decorate'
-    puts "git_stashed_call: #{git_stashed_call}"
-    stashed, err, status = Open3.capture3( git_stashed_call )
-    puts "stashed: #{stashed.inspect} -- err: #{err.inspect} -- status: #{status.inspect}"
+  def bold;    "\e[1m#{self}\e[22m" end
+end
 
-
-    if show_tag == false
-      tag, err = [ '' ], false
-    elsif show_tag == 'contains'
-      tag, err, status = Open3.capture3( git_base + ' describe --contains' )
-    elsif show_tag == 'last'
-      tag, err, status = Open3.capture3( git_base + ' describe --tags' )
-    elsif show_tag == 'annotated'
-      tag, err, status = Open3.capture3( git_base + ' describe' )
+# main
+# check for ~/.treeg.conf
+if File.exist? config[ :configfile ]
+  config[ :configfile_exists ] = true
+  config = parse_config( config )
+end
+# shellargs override paths provided in ~/.treeg.conf
+if ARGV
+  paths = Array.new
+  ARGV.each do |arg|
+    if File.exist?( arg ) and File.directory?( arg )
+      paths << arg
     else
-      tag, err, status = Open3.capture3( git_base + ' describe --tags --exact-match --abbrev=0' )
+      puts "Skipping #{ arg.inspect } (not a directory)"
     end
+  end
+  config[:paths] = paths if ! paths.empty?
+  config[:shellargs_present] = true if ! paths.empty?
+end
 
-    if err and ( err.include? 'error' or err.include? 'fatal' or err.include? 'Could not get sha1 for HEAD' )
-      tag = ''
+show_tag = true
+untracked_not_dirty = false
+
+config[:paths].each do |path|
+  git_dirs += find_git_dirs( path )
+end
+if config[ :sortmodified ]
+  # brute force to find the youngest touch in each git_dir, then order git_dirs by that
+  # ugh
+  mtime_map = {}
+  git_dirs.each do |git_dir|
+    find = "find #{ File.dirname( git_dir ) } -not \\( -path #{ git_dir } -prune \\) -type f"
+    files, err, status = Open3.capture3( find )
+    files = files.split( "\n" )
+    most_recent_edit_file = ( files.sort_by { |file| File.mtime file } ).last
+    mtime_map[ git_dir ] = File.mtime most_recent_edit_file
+  end
+  git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] }
+end
+
+not_a_git_dir_indices = Array.new
+git_dirs.each_with_index do |git_dir, git_dir_index|
+  work_tree = File.dirname git_dir
+  git_base = "git -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree } "
+
+  git_status_call = git_base + 'status --branch --porcelain'
+  git_status, err, status = Open3.capture3( git_status_call )
+  if err.include? "fatal: not a git repository"
+    not_a_git_dir_indices << git_dir_index
+    puts "Skipping #{git_dir} (not a git repository)"
+    next
+  end
+
+  branch, detached, behind, ahead = parse_branch( git_status )
+
+  next if branch.empty?
+
+  if branch == 'HEAD'
+    branch, err, status = Open3.capture3( git_base + 'rev-parse --short HEAD' )
+    branch.chomp!
+  end
+
+  staged, unmerged, changed, untracked = parse_status( git_status )
+
+  git_stashed_call = git_base + 'stash list --no-decorate'
+  stashed, err, status = Open3.capture3( git_stashed_call )
+
+  if show_tag == false
+    tag, err = [ '' ], false
+  elsif show_tag == 'contains'
+    tag, err, status = Open3.capture3( git_base + 'describe --contains' )
+  elsif show_tag == 'last'
+    tag, err, status = Open3.capture3( git_base + 'describe --tags' )
+  elsif show_tag == 'annotated'
+    tag, err, status = Open3.capture3( git_base + 'describe' )
+  else
+    tag, err, status = Open3.capture3( git_base + 'describe --tags --exact-match --abbrev=0' )
+  end
+
+  if err and ( err.include? 'error' or err.include? 'fatal' or err.include? 'Could not get sha1 for HEAD' )
+    tag = ''
+  end
+  tag.chomp!
+
+  if staged.nonzero? or unmerged.nonzero? or changed.nonzero? or ( untracked.nonzero? and not untracked_not_dirty )
+    dirty = true 
+  else
+    dirty = false
+  end
+
+  summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
+
+  if config[:hideclean]
+    if ! dirty and ! detached
+      next
     end
+  end
 
-    # tbc build_segments
-    segments = build_segments( branch, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
-    puts [ work_tree, segments.join( ' ' ) ].join ':'
-    puts '------------'
+  if config[ :colored ]
+    if dirty and ! detached
+      puts "#{work_tree}: #{summary.send(config[:dirty])}"
+    elsif dirty and detached
+      puts "#{work_tree}: #{summary.send(config[:detached])}"
+    elsif ! detached and ! dirty
+      puts "#{work_tree}: #{summary.send(config[:clean])}"
+    end
+  else
+    puts "#{work_tree}: #{summary}"
+  end
 
-  end # /^\.git$/
-end # paths.each
+end # git_dirs.each
+# prune git_dirs of impostors
+not_a_git_dir_indices.each do |i|
+  git_dirs.delete_at i
+end
+
+if git_dirs.size == 0 and not_a_git_dir_indices.size == 0
+  if ! config[ :configfile_exists ]
+    puts "Use #{ config[ :configfile ] } to provide search path(s)"
+  end
+  if ! config[:shellargs_present]
+    puts "Or run #{AppName} with search path arguments"
+  end
+  puts "Found 0 git repositories"
+end
+
+if config[ :printlegend ] and git_dirs.size > 0
+  puts "  #{AppName}:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed".bold unless git_dirs.size == 0
+end
 
