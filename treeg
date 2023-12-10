@@ -71,7 +71,7 @@ def parse_branch( line )
 end # parse_branch
 
 def parse_status( line )
-  lines = line.split("\n").map { |l| l.chomp }
+  lines = line.split( "\n" ).map { |l| l.chomp }
   staged, unmerged, changed, untracked = 0, 0, 0, 0
 
   lines.each do |l|
@@ -93,9 +93,9 @@ def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged
   segments << " x#{ unmerged }" if unmerged.nonzero?
   segments << " ✚#{ changed }" if changed.nonzero?
   segments << " …#{ untracked }" if untracked.nonzero?
-  segments << " ⚑#{ stashed.split("\n").size } stash#{ stashed.split("\n").size != 1 ? 'es' : '' }" if ! stashed.empty?
+  segments << " ⚑#{ stashed.split( "\n" ).size } stash#{ stashed.split("\n").size != 1 ? 'es' : '' }" if ! stashed.empty?
 
-  summary = segments.join(' ') + ' '
+  summary = segments.join( ' ' ) + ' '
   return summary
 end # build_summary
 
@@ -117,12 +117,12 @@ def parse_config( config )
         if config.key? key
           case value
           when 'yes'
-            config[key] = true
+            config[ key ] = true
           when 'no'
-            config[key] = false
+            config[ key ] = false
           end
-          if config[:colors].include? value
-            config[key] = value
+          if config[ :colors ].include? value
+            config[ key ] = value
           end
         end
       else
@@ -194,7 +194,7 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   git_status, err, status = Open3.capture3( git_status_call )
   if err.include? "fatal: not a git repository"
     not_a_git_dir_indices << git_dir_index
-    puts "Skipping #{git_dir} (not a git repository)"
+    puts "Skipping #{ git_dir } (not a git repository)"
     next
   end
 
@@ -237,7 +237,7 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
 
   summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
 
-  if config[:hideclean]
+  if config[ :hideclean ]
     if ! dirty and ! detached
       next
     end
@@ -245,14 +245,14 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
 
   if config[ :colored ]
     if dirty and ! detached
-      puts "#{work_tree}: #{summary.send(config[:dirty])}"
+      puts "#{ work_tree }: #{ summary.send( config[ :dirty ] ) }"
     elsif dirty and detached
-      puts "#{work_tree}: #{summary.send(config[:detached])}"
+      puts "#{ work_tree }: #{ summary.send( config[ :detached ] ) }"
     elsif ! detached and ! dirty
-      puts "#{work_tree}: #{summary.send(config[:clean])}"
+      puts "#{ work_tree }: #{ summary.send( config[ :clean ] ) }"
     end
   else
-    puts "#{work_tree}: #{summary}"
+    puts "#{ work_tree }: #{ summary }"
   end
 
 end # git_dirs.each
@@ -266,12 +266,12 @@ if git_dirs.size == 0 and not_a_git_dir_indices.size == 0
     puts "Use #{ config[ :configfile ] } to provide search path(s)"
   end
   if ! config[:shellargs_present]
-    puts "Or run #{AppName} with search path arguments"
+    puts "Or run #{ AppName } with search path arguments"
   end
   puts "Found 0 git repositories"
 end
 
-if config[ :printlegend ] and git_dirs.size > 0
-  puts "  #{AppName}:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed".bold unless git_dirs.size == 0
+if config[ :explanation ] and git_dirs.size > 0
+  puts "  #{ AppName }:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed".bold unless git_dirs.size == 0
 end
 
