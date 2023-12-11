@@ -1,9 +1,16 @@
 # treeg
 `treeg` searches dirtrees for `git` repositories and prints a short status summary for each. It takes search paths from its config file `~/.treeg.conf` or from overriding shell arguments.
 
+I needed a tool to provide a quick status overview for a dev tree. And sometimes its useful to check specific ```git``` repositories. Both these from afar.
+
+```bash
+$ treeg
+$ treeg ~/projects/foo ~/.config/nvim
+```
+
 Put `treeg` in your `PATH` (e.g. `~/bin`) and place `.treeg.conf` in `HOME`.
 
-Example config (`~/.treeg.conf`)
+Example config (`~/.treeg.conf`):
 
 ```
 # Search for git repositories in these paths
