@@ -146,7 +146,8 @@ class String
 end
 
 # main
-# check for ~/.treeg.conf
+#
+# check for configfile
 if File.exist? config[ :configfile ]
   config[ :configfile_exists ] = true
   config = parse_config( config )
@@ -168,7 +169,7 @@ end
 show_tag = true
 untracked_not_dirty = false
 
-config[:paths].each do |path|
+config[ :paths ].each do |path|
   git_dirs += find_git_dirs( path )
 end
 if config[ :sortmodified ]
