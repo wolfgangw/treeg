@@ -84,7 +84,7 @@ def parse_status( line )
   return [ staged, unmerged, changed, untracked ]
 end # parse_status
 
-def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
+def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_means_dirty )
   segments = [ " #{ detached ? '✜detached (' + branch + ')' : '✜' + branch }" ]
   segments << " \u2605#{ tag }" if ! tag[0].nil? #tag[0].empty? # Black Star (U+2605)
   segments << " ↓#{ behind }" if behind.nonzero?
@@ -92,7 +92,7 @@ def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged
   segments << " ●#{ staged }" if staged.nonzero?
   segments << " x#{ unmerged }" if unmerged.nonzero?
   segments << " ✚#{ changed }" if changed.nonzero?
-  segments << " …#{ untracked }" if untracked.nonzero?
+  segments << " …#{ untracked }" if untracked.nonzero? and untracked_means_dirty
   segments << " ⚑#{ stashed.split( "\n" ).size } stash#{ stashed.split("\n").size != 1 ? 'es' : '' }" if ! stashed.empty?
 
   summary = segments.join( ' ' ) + ' '
@@ -167,7 +167,7 @@ if ! ARGV.empty?
 end
 
 show_tag = true
-untracked_not_dirty = false
+untracked_means_dirty = true
 
 config[ :paths ].each do |path|
   git_dirs += find_git_dirs( path )
@@ -230,13 +230,13 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   end
   tag.chomp!
 
-  if staged.nonzero? or unmerged.nonzero? or changed.nonzero? or ( untracked.nonzero? and not untracked_not_dirty )
+  if staged.nonzero? or unmerged.nonzero? or changed.nonzero? or ( untracked.nonzero? and untracked_means_dirty ) or behind.nonzero? or ahead.nonzero?
     dirty = true 
   else
     dirty = false
   end
 
-  summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_not_dirty )
+  summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_means_dirty )
 
   if config[ :hideclean ]
     if ! dirty and ! detached
