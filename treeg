@@ -62,7 +62,7 @@ def parse_branch( line )
     return [ branch, false, 0, match[1].to_i ] unless match.nil?
 
     match = line.match /\[behind (\d+)\]$/
-    return [ branch, false, match[1], 0 ] unless match.nil?
+    return [ branch, false, match[1].to_i, 0 ] unless match.nil?
 
     return [ branch, false, 0, 0 ]
   end
