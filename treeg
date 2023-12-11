@@ -153,7 +153,8 @@ if File.exist? config[ :configfile ]
   config = parse_config( config )
 end
 # shellargs override paths provided in ~/.treeg.conf
-if ARGV
+if ! ARGV.empty?
+  config[ :shellargs_present ] = true
   paths = Array.new
   ARGV.each do |arg|
     if File.exist?( arg ) and File.directory?( arg )
@@ -162,8 +163,7 @@ if ARGV
       puts "Skipping #{ arg.inspect } (not a directory)"
     end
   end
-  config[:paths] = paths if ! paths.empty?
-  config[:shellargs_present] = true if ! paths.empty?
+  config[ :paths ] = paths
 end
 
 show_tag = true
