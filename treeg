@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
+
 #
 # treeg searches filetrees for git repositories
 # and prints a status summary for each
@@ -17,11 +18,14 @@ require 'etc'
 homedir = Etc.getpwuid.dir
 
 git_dirs = Array.new
+
 config = {
   :configfile => AppConfigFile,
   :configfile_exists => false,
   :shellargs_present => false,
   :sortmodified => true,
+  :showtag => 'last',
+  :showtag_variants => [ 'dont', 'contains', 'last', 'annotated' ],
   :explanation => true,
   :hideclean => false,
   :colored => true,
@@ -125,6 +129,10 @@ def parse_config( config )
           end
           if config[ :colors ].include? value
             config[ key ] = value
+          else
+            elsif config[ :showtag_variants ].include? value
+              config[ key ] = value
+            end
           end
         end
       else
@@ -218,13 +226,13 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   git_stashed_call = git_base + 'stash list --no-decorate'
   stashed, err, status = Open3.capture3( git_stashed_call )
 
-  if show_tag == false
-    tag, err = [ '' ], false
-  elsif show_tag == 'contains'
+  if config[ :showtag ] == 'dont'
+    tag, err = '', false
+  elsif config[ :showtag ] == 'contains'
     tag, err, status = Open3.capture3( git_base + 'describe --contains' )
-  elsif show_tag == 'last'
+  elsif config[ :showtag ] == 'last'
     tag, err, status = Open3.capture3( git_base + 'describe --tags' )
-  elsif show_tag == 'annotated'
+  elsif config[ :showtag ] == 'annotated'
     tag, err, status = Open3.capture3( git_base + 'describe' )
   else
     tag, err, status = Open3.capture3( git_base + 'describe --tags --exact-match --abbrev=0' )
