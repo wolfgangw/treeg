@@ -267,10 +267,6 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
 
   summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, config[ :untrackeddirty ] )
 
-  if config[ :hideclean ]
-    if ! dirty and ! detached
-      next
-    end
   if config[ :padded ]
     work_tree = work_tree.gsub( homedir, '~' ).rjust( maxlen_paths )
   end
