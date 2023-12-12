@@ -26,6 +26,8 @@ config = {
   :sortmodified => true,
   :showtag => 'last',
   :showtag_variants => [ 'dont', 'contains', 'last', 'annotated' ],
+  :untrackeddirty => true,
+  :stasheddirty => true,
   :explanation => true,
   :hideclean => false,
   :colored => true,
@@ -90,7 +92,7 @@ def parse_status( line )
   return [ staged, unmerged, changed, untracked ]
 end # parse_status
 
-def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_means_dirty )
+def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_dirty )
   segments = [ " #{ detached ? '✜detached (' + branch + ')' : '✜' + branch }" ]
   segments << " \u2605#{ tag }" if ! tag[0].nil? #tag[0].empty? # Black Star (U+2605)
   segments << " ↓#{ behind }" if behind.nonzero?
@@ -98,7 +100,7 @@ def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged
   segments << " ●#{ staged }" if staged.nonzero?
   segments << " x#{ unmerged }" if unmerged.nonzero?
   segments << " ✚#{ changed }" if changed.nonzero?
-  segments << " …#{ untracked }" if untracked.nonzero? and untracked_means_dirty
+  segments << " …#{ untracked }" if untracked.nonzero? and untracked_dirty
   segments << " ⚑#{ stashed.split( "\n" ).size } stash#{ stashed.split("\n").size != 1 ? 'es' : '' }" if ! stashed.empty?
 
   summary = segments.join( ' ' ) + ' '
@@ -176,9 +178,6 @@ if ! ARGV.empty?
   config[ :paths ] = paths
 end
 
-show_tag = true
-untracked_means_dirty = true
-
 config[ :paths ].each do |path|
   git_dirs += find_git_dirs( path )
 end
@@ -226,6 +225,8 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   git_stashed_call = git_base + 'stash list --no-decorate'
   stashed, err, status = Open3.capture3( git_stashed_call )
 
+    ( untracked.nonzero? and config[ :untrackeddirty ] ) or
+    ( stashed.size > 0 and config[ :stasheddirty ] )
   if config[ :showtag ] == 'dont'
     tag, err = '', false
   elsif config[ :showtag ] == 'contains'
@@ -243,13 +244,7 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   end
   tag.chomp!
 
-  if staged.nonzero? or unmerged.nonzero? or changed.nonzero? or ( untracked.nonzero? and untracked_means_dirty ) or behind.nonzero? or ahead.nonzero?
-    dirty = true 
-  else
-    dirty = false
-  end
-
-  summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, untracked_means_dirty )
+  summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, config[ :untrackeddirty ] )
 
   if config[ :hideclean ]
     if ! dirty and ! detached
