@@ -270,19 +270,19 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   if config[ :padded ]
     work_tree = work_tree.gsub( homedir, '~' ).rjust( maxlen_paths )
   end
-
   if config[ :colored ]
     work_tree = File.join( File.dirname( work_tree ).faint, File.basename( work_tree ) )
     if dirty and ! detached
-      puts "#{ work_tree }: #{ summary.send( config[ :dirty ] ) }"
+      output = "#{ work_tree }: #{ summary.send( config[ :dirty ] ) }"
     elsif dirty and detached
-      puts "#{ work_tree }: #{ summary.send( config[ :detached ] ) }"
+      output = "#{ work_tree }: #{ summary.send( config[ :detached ] ) }"
     elsif ! detached and ! dirty
-      puts "#{ work_tree }: #{ summary.send( config[ :clean ] ) }"
+      output = "#{ work_tree }: #{ summary.send( config[ :clean ] ) }"
     end
   else
-    puts "#{ work_tree }: #{ summary }"
+    output = "#{ work_tree }: #{ summary }"
   end
+  puts output
 
 end # git_dirs.each
 # prune git_dirs of impostors
