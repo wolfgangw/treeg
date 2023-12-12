@@ -129,10 +129,9 @@ def parse_config( config )
             config[ key ] = true
           when 'no'
             config[ key ] = false
-          end
-          if config[ :colors ].include? value
-            config[ key ] = value
           else
+            if config[ :colors ].include? value
+              config[ key ] = value
             elsif config[ :showtag_variants ].include? value
               config[ key ] = value
             end
@@ -156,6 +155,7 @@ class String
   def gray;    "\e[37m#{self}\e[0m" end
 
   def bold;    "\e[1m#{self}\e[22m" end
+  def faint;   "\e[2m#{self}\e[22m" end
 end
 
 # main
@@ -256,6 +256,7 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   end
 
   if config[ :colored ]
+    work_tree = File.join( File.dirname( work_tree ).faint, File.basename( work_tree ) )
     if dirty and ! detached
       puts "#{ work_tree }: #{ summary.send( config[ :dirty ] ) }"
     elsif dirty and detached
