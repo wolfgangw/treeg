@@ -30,6 +30,7 @@ config = {
   :stasheddirty => true,
   :explanation => true,
   :hideclean => false,
+  :padded => false,
   :colored => true,
   :colors => ['black', 'red', 'green', 'brown', 'blue', 'magenta', 'cyan', 'gray'],
   :dirty => 'cyan',
