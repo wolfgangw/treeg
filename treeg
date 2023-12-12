@@ -297,6 +297,6 @@ if git_dirs.size == 0 and not_a_git_dir_indices.size == 0
 end
 
 if config[ :explanation ] and git_dirs.size > 0
-  puts "  #{ AppName }:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed".bold unless git_dirs.size == 0
+  puts "#{ AppName }:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed"
 end
 
