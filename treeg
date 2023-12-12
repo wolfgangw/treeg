@@ -179,6 +179,7 @@ if ! ARGV.empty?
   config[ :paths ] = paths
 end
 
+# produce a sorted (a-z or by mtime) list of paths to potential git repositories
 config[ :paths ].each do |path|
   git_dirs += find_git_dirs( path )
 end
@@ -193,7 +194,8 @@ if config[ :sortmodified ]
     most_recent_edit_file = ( files.sort_by { |file| File.mtime file } ).last
     mtime_map[ git_dir ] = File.mtime most_recent_edit_file
   end
-  git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] }
+  git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] } # sort and get rid of the timestamp after
+end
 
 if config[ :padded ]
   maxlen_paths = git_dirs.map { |p| File.dirname( p ).gsub( homedir, '~' ).size }.max
