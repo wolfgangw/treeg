@@ -13,6 +13,8 @@ AppVersion = 'v0.2023.12.12'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'open3'
+require 'etc'
+homedir = Etc.getpwuid.dir
 
 git_dirs = Array.new
 config = {
@@ -184,6 +186,9 @@ if config[ :sortmodified ]
     mtime_map[ git_dir ] = File.mtime most_recent_edit_file
   end
   git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] }
+
+if config[ :padded ]
+  maxlen_paths = git_dirs.map { |p| File.dirname( p ).gsub( homedir, '~' ).size }.max
 end
 
 not_a_git_dir_indices = Array.new
@@ -242,6 +247,8 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
     if ! dirty and ! detached
       next
     end
+  if config[ :padded ]
+    work_tree = work_tree.gsub( homedir, '~' ).rjust( maxlen_paths )
   end
 
   if config[ :colored ]
