@@ -208,7 +208,7 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
 
   git_status_call = git_base + 'status --branch --porcelain'
   git_status, err, status = Open3.capture3( git_status_call )
-  if err.include? "fatal: not a git repository"
+  if err.include? 'fatal: not a git repository'
     not_a_git_dir_indices << git_dir_index
     puts "Skipping #{ git_dir } (not a git repository)"
     next
@@ -228,8 +228,26 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   git_stashed_call = git_base + 'stash list --no-decorate'
   stashed, err, status = Open3.capture3( git_stashed_call )
 
+  if
+    staged.nonzero? or
+    unmerged.nonzero? or
+    changed.nonzero? or
     ( untracked.nonzero? and config[ :untrackeddirty ] ) or
+    behind.nonzero? or
+    ahead.nonzero? or
     ( stashed.size > 0 and config[ :stasheddirty ] )
+
+    dirty = true
+  else
+    dirty = false
+  end
+
+  if config[ :hideclean ]
+    if ! dirty and ! detached
+      next
+    end
+  end
+
   if config[ :showtag ] == 'dont'
     tag, err = '', false
   elsif config[ :showtag ] == 'contains'
@@ -277,12 +295,8 @@ not_a_git_dir_indices.each do |i|
 end
 
 if git_dirs.size == 0 and not_a_git_dir_indices.size == 0
-  if ! config[ :configfile_exists ]
-    puts "Use #{ config[ :configfile ] } to provide search path(s)"
-  end
-  if ! config[:shellargs_present]
-    puts "Or run #{ AppName } with search path arguments"
-  end
+  puts "Use #{ config[ :configfile ] } to provide search path(s)" unless config[ :configfile_exists ]
+  puts "Or run #{ AppName } with search path arguments" unless config[ :shellargs_present ]
   puts "Found 0 git repositories"
 end
 
