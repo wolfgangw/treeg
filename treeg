@@ -16,8 +16,12 @@ AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 require 'open3'
 require 'etc'
 homedir = Etc.getpwuid.dir
+exclude_dirs = []
+if RUBY_PLATFORM.match /darwin/
+  exclude_dirs = [ File.join( homedir, 'Library' ), File.join( homedir, '.Trash' ) ]
+end
 
-git_dirs = Array.new
+git_dirs = []
 
 config = {
   :configfile => AppConfigFile,
@@ -39,12 +43,51 @@ config = {
   :paths => [],
 }
 
-def find_git_dirs( path )
-  git_dirs = Array.new
-  Dir.chdir( path ) { |d| git_dirs = Dir[ "**/.git" ] }
-  git_dirs.each_with_index do |childdir, index|
-    git_dirs[index] = File.join( path, childdir )
+def parse_config( config )
+  File.read( config[ :configfile ] ).split( "\n" ).each do |line|
+    line = line.chomp.strip
+    if line =~ /^#/ or line =~ /^\s*$/
+      next
+    end
+
+    # brute force File.exist? through lines first (whitespace in paths)
+    if File.exist?( File.expand_path( line ) )
+      config[ :paths ] += [ File.expand_path( line) ]
+    else
+      option = line.split( /\s+/ )
+      if option.size == 2
+        key = option[0].to_sym
+        value = option[1]
+        if config.key? key
+          case value
+          when 'yes'
+            config[ key ] = true
+          when 'no'
+            config[ key ] = false
+          else
+            if config[ :colors ].include? value
+              config[ key ] = value
+            elsif config[ :showtag_variants ].include? value
+              config[ key ] = value
+            end
+          end
+        end
+      else
+      end
+    end
   end
+  return config
+end
+
+def find_git_dirs( path, exclude_dirs )
+  git_dirs = []
+  exclude = ''
+  exclude_dirs.each do |dir|
+    exclude += "-not \\( -path #{ File.join( path, dir ) } -prune \\) "
+  end
+  find = "find #{ path } #{ exclude } -type d -name .git"
+  git_dirs, err, status = Open3.capture3( find )
+  git_dirs = git_dirs.split( "\n" )
   return git_dirs
 end
 
@@ -108,42 +151,6 @@ def build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged
   return summary
 end # build_summary
 
-def parse_config( config )
-  File.read( config[ :configfile ] ).split( "\n" ).each do |line|
-    line = line.chomp.strip
-    if line =~ /^#/ or line =~ /^\s*$/
-      next
-    end
-
-    # brute force File.exist? through lines first (whitespace in paths)
-    if File.exist?( File.expand_path( line ) )
-      config[ :paths ] += [ File.expand_path( line) ]
-    else
-      option = line.split( /\s+/ )
-      if option.size == 2
-        key = option[0].to_sym
-        value = option[1]
-        if config.key? key
-          case value
-          when 'yes'
-            config[ key ] = true
-          when 'no'
-            config[ key ] = false
-          else
-            if config[ :colors ].include? value
-              config[ key ] = value
-            elsif config[ :showtag_variants ].include? value
-              config[ key ] = value
-            end
-          end
-        end
-      else
-      end
-    end
-  end
-  return config
-end
-
 class String
   def black;   "\e[30m#{self}\e[0m" end
   def red;     "\e[31m#{self}\e[0m" end
@@ -168,7 +175,7 @@ end
 # shellargs override paths provided in ~/.treeg.conf
 if ! ARGV.empty?
   config[ :shellargs_present ] = true
-  paths = Array.new
+  paths = []
   ARGV.each do |arg|
     if File.exist?( arg ) and File.directory?( arg )
       paths << arg
@@ -181,8 +188,9 @@ end
 
 # produce a sorted (a-z or by mtime) list of paths to potential git repositories
 config[ :paths ].each do |path|
-  git_dirs += find_git_dirs( path )
+  git_dirs += find_git_dirs( path, exclude_dirs )
 end
+
 if config[ :sortmodified ]
   # brute force to find the youngest touch in each git_dir, then order git_dirs by that
   # ugh
@@ -201,7 +209,7 @@ if config[ :padded ]
   maxlen_paths = git_dirs.map { |p| File.dirname( p ).gsub( homedir, '~' ).size }.max
 end
 
-not_a_git_dir_indices = Array.new
+not_a_git_dir_indices = []
 git_dirs.each_with_index do |git_dir, git_dir_index|
   work_tree = File.dirname git_dir
   git_base = "git -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree } "
