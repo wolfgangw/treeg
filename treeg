@@ -12,6 +12,8 @@ AppName = File.basename( $0 )
 AppVersion = 'v0.2023.12.17'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
+require 'date'
+today = Date.today.to_s
 require 'open3'
 require 'etc'
 homedir = Etc.getpwuid.dir
@@ -26,6 +28,7 @@ config = {
   :configfile => AppConfigFile,
   :configfile_exists => false,
   :shellargs_present => false,
+  :checkremote => true,
   :sortmodified => true,
   :showtag => 'last',
   :showtag_variants => [ 'dont', 'contains', 'last', 'annotated' ],
@@ -172,12 +175,12 @@ if File.exist? config[ :configfile ]
   config = parse_config( config )
 end
 # shellargs override paths provided in ~/.treeg.conf
-if ! ARGV.empty?
+unless ARGV.empty?
   config[ :shellargs_present ] = true
   paths = []
   ARGV.each do |arg|
     if File.exist?( arg ) and File.directory?( arg )
-      paths << arg
+      paths << File.expand_path( arg )
     else
       puts "Skipping #{ arg.inspect } (not a directory)"
     end
@@ -193,13 +196,21 @@ end
 if config[ :sortmodified ]
   # brute force to find the youngest touch in each git_dir, then order git_dirs by that
   # ugh
+  #
   mtime_map = {}
   git_dirs.each do |git_dir|
+    # keeping this attempt to speed things up around - ~15% slower:
+    #
+    # find = "find #{ File.dirname( git_dir ) } -not \\( -path #{ git_dir } -prune \\) -type f -printf '%T@ %P\n' | sort -nr | awk '{print $2}'"
+    # files, err, status = Open3.capture3( find )
+    # most_recently_modified = files.gsub( /\n.*/, '' )
+    # mtime_map[ git_dir ] = File.mtime File.join( File.dirname( git_dir ), most_recently_modified )
+
     find = "find #{ File.dirname( git_dir ) } -not \\( -path #{ git_dir } -prune \\) -type f"
     files, err, status = Open3.capture3( find )
     files = files.split( "\n" )
-    most_recent_edit_file = ( files.sort_by { |file| File.mtime file } ).last
-    mtime_map[ git_dir ] = File.mtime most_recent_edit_file
+    most_recently_modified = ( files.sort_by { |file| File.mtime file } ).last
+    mtime_map[ git_dir ] = File.mtime most_recently_modified
   end
   git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] } # sort and get rid of the timestamp after
 end
@@ -219,6 +230,25 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
     not_a_git_dir_indices << git_dir_index
     puts "Skipping #{ git_dir } (not a git repository)"
     next
+  end
+
+  begin
+    if config[ :checkremote ]
+      day_fetch_head, err, status = Open3.capture3( "stat -c %y #{ File.join( git_dir, 'FETCH_HEAD' ) }" )
+      day_fetch_head = day_fetch_head.gsub(/ .*\n/, '')
+      if day_fetch_head == today
+        checkremote_msg = "Already checked remote once today for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }"
+        printf "%s\r" % checkremote_msg
+      else
+        checkremote_msg = "Checking remote this once today for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }..."
+        printf "%s\r" % checkremote_msg
+        git_checkremote_call = git_base + 'fetch'
+        git_checkremote, err, status = Open3.capture3( git_checkremote_call )
+      end
+    end
+  rescue Exception => e
+    puts e.message
+    puts "Could not check remote for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }"
   end
 
   branch, detached, behind, ahead = parse_branch( git_status )
@@ -251,6 +281,9 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
 
   if config[ :hideclean ]
     if ! dirty and ! detached
+      if config[ :checkremote ]
+        printf "%s\r" % ( ' ' * checkremote_msg.size )
+      end
       next
     end
   end
@@ -288,6 +321,10 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
     end
   else
     output = "#{ work_tree }: #{ summary }"
+  end
+  # clear checkremote_msg and print summary
+  if config[ :checkremote ]
+    printf "%s\r" % ( ' ' * checkremote_msg.size )
   end
   puts output
 
