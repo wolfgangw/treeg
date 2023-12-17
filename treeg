@@ -1,5 +1,4 @@
 #!/usr/bin/env ruby
-# encoding: utf-8
 
 #
 # treeg searches filetrees for git repositories
@@ -10,7 +9,7 @@
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2023.12.15'
+AppVersion = 'v0.2023.12.17'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'open3'
@@ -94,9 +93,9 @@ end
 def parse_branch( line )
   line = line.split( "\n" )[0]
   return [ '', false, 0, 0 ] if not line
-  
+
   line = line[ 3.. ] if line.start_with? '## '
-  
+
   match = line.match /^Initial commit on (.+)$/
   return [ match[1], false, 0, 0 ] unless match.nil?
 
@@ -307,4 +306,6 @@ end
 if config[ :explanation ] and git_dirs.size > 0
   puts "#{ AppName }:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed"
 end
+
+exit 0
 
