@@ -234,8 +234,15 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
 
   begin
     if config[ :checkremote ]
-      day_fetch_head, err, status = Open3.capture3( "stat -c %y #{ File.join( git_dir, 'FETCH_HEAD' ) }" )
-      day_fetch_head = day_fetch_head.gsub(/ .*\n/, '')
+      fetch_head_file_path = File.join( git_dir, 'FETCH_HEAD' )
+      if RUBY_PLATFORM.match /darwin/
+        stat_call = "stat -f %Sm -t '%Y-%m-%d' #{ fetch_head_file_path }"
+      else
+        stat_call = "stat -c %y #{ fetch_head_file_path }"
+      end
+      day_fetch_head, err, status = Open3.capture3( stat_call )
+      # keep only the leading yyyy-mm-dd (chomp the darwin output)
+      day_fetch_head = day_fetch_head.gsub( / .*\n/, '' ).chomp
       if day_fetch_head == today
         checkremote_msg = "Already checked remote once today for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }"
         printf "%s\r" % checkremote_msg
