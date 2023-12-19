@@ -9,7 +9,7 @@
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2023.12.17'
+AppVersion = 'v0.2023.12.19'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
@@ -83,13 +83,27 @@ end
 
 def find_git_dirs( path, exclude_dirs )
   git_dirs = []
+
   exclude = ''
   exclude_dirs.each do |dir|
     exclude += "-not \\( -path #{ File.join( path, dir ) } -prune \\) "
   end
+
   find = "find #{ path } #{ exclude } -type d -name .git"
-  git_dirs, err, status = Open3.capture3( find )
-  git_dirs = git_dirs.split( "\n" )
+  dirs, err, status = Open3.capture3( find )
+  dirs = dirs.split( "\n" )
+
+  dirs.each_with_index do |dir, index|
+    check = "2>/dev/null git -C #{ File.dirname( dir ) } rev-parse"
+    is_repo = system( check )
+    if is_repo
+      git_dirs << dir
+    else
+      puts "Skipping #{ dir } (not a git repository)"
+      next
+    end
+  end
+
   return git_dirs
 end
 
@@ -188,29 +202,32 @@ unless ARGV.empty?
   config[ :paths ] = paths
 end
 
-# produce a sorted (a-z or by mtime) list of paths to potential git repositories
+# produce a sorted (a-z or by mtime) list of paths to proper git repositories
 config[ :paths ].each do |path|
-  git_dirs += find_git_dirs( path, exclude_dirs )
+  proper_git_dirs = find_git_dirs( path, exclude_dirs )
+  git_dirs += proper_git_dirs
 end
 
 if config[ :sortmodified ]
-  # brute force to find the youngest touch in each git_dir, then order git_dirs by that
-  # ugh
+  #
+  # brute force to find the youngest touch in each git_dir (ignoring .git dir to process less files),
+  # then order git_dirs by that. ugh
+  #
+  # is there a better way to deep-find the most recently modified, possibly unstaged, file in a repo tree?
+  #
+  # also, this doesn't handle nested repos up the tree
   #
   mtime_map = {}
   git_dirs.each do |git_dir|
-    # keeping this attempt to speed things up around - ~15% slower:
-    #
-    # find = "find #{ File.dirname( git_dir ) } -not \\( -path #{ git_dir } -prune \\) -type f -printf '%T@ %P\n' | sort -nr | awk '{print $2}'"
-    # files, err, status = Open3.capture3( find )
-    # most_recently_modified = files.gsub( /\n.*/, '' )
-    # mtime_map[ git_dir ] = File.mtime File.join( File.dirname( git_dir ), most_recently_modified )
-
     find = "find #{ File.dirname( git_dir ) } -not \\( -path #{ git_dir } -prune \\) -type f"
     files, err, status = Open3.capture3( find )
     files = files.split( "\n" )
-    most_recently_modified = ( files.sort_by { |file| File.mtime file } ).last
-    mtime_map[ git_dir ] = File.mtime most_recently_modified
+    if files.any?
+      most_recently_modified = ( files.sort_by { |file| File.mtime file } ).last
+      mtime_map[ git_dir ] = File.mtime most_recently_modified
+    else
+      mtime_map[ git_dir ] = File.mtime( File.dirname git_dir )
+    end
   end
   git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] } # sort and get rid of the timestamp after
 end
@@ -219,18 +236,11 @@ if config[ :padded ]
   maxlen_paths = git_dirs.map { |p| File.dirname( p ).gsub( homedir, '~' ).size }.max
 end
 
-not_a_git_dir_indices = []
+# loop over all git repos
 git_dirs.each_with_index do |git_dir, git_dir_index|
   work_tree = File.dirname git_dir
+  work_tree_short = work_tree.gsub( homedir, '~' )
   git_base = "git -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree } "
-
-  git_status_call = git_base + 'status --branch --porcelain'
-  git_status, err, status = Open3.capture3( git_status_call )
-  if err.include? 'fatal: not a git repository'
-    not_a_git_dir_indices << git_dir_index
-    puts "Skipping #{ git_dir } (not a git repository)"
-    next
-  end
 
   begin
     if config[ :checkremote ]
@@ -244,10 +254,10 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
       # keep only the leading yyyy-mm-dd (chomp the darwin output)
       day_fetch_head = day_fetch_head.gsub( / .*\n/, '' ).chomp
       if day_fetch_head == today
-        checkremote_msg = "Already checked remote once today for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }"
+        checkremote_msg = "Already checked remote once today for #{ work_tree_short }"
         printf "%s\r" % checkremote_msg
       else
-        checkremote_msg = "Checking remote this once today for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }..."
+        checkremote_msg = "Checking remote this once today for #{ work_tree_short }..."
         printf "%s\r" % checkremote_msg
         git_checkremote_call = git_base + 'fetch'
         git_checkremote, err, status = Open3.capture3( git_checkremote_call )
@@ -255,8 +265,11 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
     end
   rescue Exception => e
     puts e.message
-    puts "Could not check remote for #{ File.dirname( git_dir ).gsub( homedir, '~' ) }"
+    puts "Could not check remote for #{ work_tree_short }"
   end
+
+  git_status_call = git_base + 'status --branch --porcelain'
+  git_status, err, status = Open3.capture3( git_status_call )
 
   branch, detached, behind, ahead = parse_branch( git_status )
 
@@ -291,6 +304,7 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
       if config[ :checkremote ]
         printf "%s\r" % ( ' ' * checkremote_msg.size )
       end
+
       next
     end
   end
@@ -336,15 +350,11 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
   puts output
 
 end # git_dirs.each
-# prune git_dirs of impostors
-not_a_git_dir_indices.each do |i|
-  git_dirs.delete_at i
-end
 
-if git_dirs.size == 0 and not_a_git_dir_indices.size == 0
+if git_dirs.size == 0
+  puts "Found 0 git repositories"
   puts "Use #{ config[ :configfile ] } to provide search path(s)" unless config[ :configfile_exists ]
   puts "Or run #{ AppName } with search path arguments" unless config[ :shellargs_present ]
-  puts "Found 0 git repositories"
 end
 
 if config[ :explanation ] and git_dirs.size > 0
