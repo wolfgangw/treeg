@@ -86,10 +86,10 @@ def find_git_dirs( path, exclude_dirs )
 
   exclude = ''
   exclude_dirs.each do |dir|
-    exclude += "-not \\( -path #{ File.join( path, dir ) } -prune \\) "
+    exclude += "-E #{ File.join( path, dir ) } "
   end
 
-  find = "find #{ path } #{ exclude } -type d -name .git"
+  find = "fdfind #{ exclude } --hidden --no-ignore --type d '^\.git$' #{ path }"
   dirs, err, status = Open3.capture3( find )
   dirs = dirs.split( "\n" )
 
@@ -219,7 +219,7 @@ if config[ :sortmodified ]
   #
   mtime_map = {}
   git_dirs.each do |git_dir|
-    find = "find #{ File.dirname( git_dir ) } -not \\( -path #{ git_dir } -prune \\) -type f"
+    find = "fdfind -E #{ git_dir } --hidden --type f #{ File.dirname( git_dir ) }" # .ignore here
     files, err, status = Open3.capture3( find )
     files = files.split( "\n" )
     if files.any?
