@@ -10,7 +10,7 @@ $ treeg ~/projects/foo ~/.config/nvim
 
 Put `treeg` in your `PATH` (e.g. `~/bin`) and place `.treeg.conf` in `HOME`.
 
-`treeg` requires `ruby` and `git`.
+`treeg` requires `ruby`, `git` and `fdfind`.
 
 Core parsing from [Jasper N. Brouwer](https://github.com/jaspernbrouwer)'s [powerline-gitstatus](https://github.com/jaspernbrouwer/powerline-gitstatus).
 
