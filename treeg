@@ -9,7 +9,7 @@
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2023.12.19'
+AppVersion = 'v0.2023.12.20'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
