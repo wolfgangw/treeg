@@ -17,14 +17,7 @@ today = Date.today.to_s
 require 'open3'
 require 'etc'
 homedir = Etc.getpwuid.dir
-
-@fdfind = 'fdfind'
-exclude_dirs = []
-
-if RUBY_PLATFORM.match /darwin/
-  exclude_dirs = [ File.join( homedir, 'Library' ), File.join( homedir, '.Trash' ) ]
-  @fdfind = 'fd'
-end
+darwin_default_excludes = [ 'library', '.Trash' ]
 
 git_dirs = []
 
@@ -47,8 +40,19 @@ config = {
   :detached => 'gray',
   :clean => 'green',
   :paths => [],
+  :exclude => [],
 }
 
+if RUBY_PLATFORM.match /darwin/
+  darwin_default_excludes.each do |exclude|
+    config[ :exclude ] << File.join( homedir, exclude )
+  end
+  @fdfind = 'fd'
+else
+  @fdfind = 'fdfind'
+end
+
+# ok, this is borderline unwieldy now
 def parse_config( config )
   File.read( config[ :configfile ] ).split( "\n" ).each do |line|
     line = line.chomp.strip
@@ -60,25 +64,35 @@ def parse_config( config )
     if File.exist?( File.expand_path( line ) )
       config[ :paths ] += [ File.expand_path( line) ]
     else
+
       option = line.split( /\s+/ )
       if option.size == 2
         key = option[0].to_sym
         value = option[1]
         if config.key? key
+
+          if key == :exclude
+            if File.exist?( File.expand_path( value ) )
+              config[ :exclude ] << File.expand_path( value )
+            end
+          end
+
           case value
           when 'yes'
             config[ key ] = true
           when 'no'
             config[ key ] = false
           else
+
             if config[ :colors ].include? value
               config[ key ] = value
             elsif config[ :showtag_variants ].include? value
               config[ key ] = value
             end
+
           end
+
         end
-      else
       end
     end
   end
@@ -90,7 +104,7 @@ def find_git_dirs( path, exclude_dirs )
 
   exclude = ''
   exclude_dirs.each do |dir|
-    exclude += "-E #{ File.join( path, dir ) } "
+    exclude += "-E '#{ File.basename dir }' "
   end
 
   find = "#{ @fdfind } #{ exclude } --hidden --no-ignore --type d '^\.git$' #{ path }"
@@ -208,7 +222,7 @@ end
 
 # produce a sorted (a-z or by mtime) list of paths to proper git repositories
 config[ :paths ].each do |path|
-  proper_git_dirs = find_git_dirs( path, exclude_dirs )
+  proper_git_dirs = find_git_dirs( path, config[ :exclude ] )
   git_dirs += proper_git_dirs
 end
 
