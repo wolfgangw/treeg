@@ -9,7 +9,7 @@
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2023.12.20'
+AppVersion = 'v0.2023.12.22'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
@@ -254,10 +254,10 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
       # keep only the leading yyyy-mm-dd (chomp the darwin output)
       day_fetch_head = day_fetch_head.gsub( / .*\n/, '' ).chomp
       if day_fetch_head == today
-        checkremote_msg = "Already checked remote once today for #{ work_tree_short }"
+        checkremote_msg = " Already checked remote once today for #{ work_tree_short }"
         printf "%s\r" % checkremote_msg
       else
-        checkremote_msg = "Checking remote this once today for #{ work_tree_short }..."
+        checkremote_msg = " Checking remote this once today for #{ work_tree_short }..."
         printf "%s\r" % checkremote_msg
         git_checkremote_call = git_base + 'fetch'
         git_checkremote, err, status = Open3.capture3( git_checkremote_call )
