@@ -9,7 +9,7 @@
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2023.12.22'
+AppVersion = 'v0.2023.12.23'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
@@ -17,9 +17,13 @@ today = Date.today.to_s
 require 'open3'
 require 'etc'
 homedir = Etc.getpwuid.dir
+
+@fdfind = 'fdfind'
 exclude_dirs = []
+
 if RUBY_PLATFORM.match /darwin/
   exclude_dirs = [ File.join( homedir, 'Library' ), File.join( homedir, '.Trash' ) ]
+  @fdfind = 'fd'
 end
 
 git_dirs = []
@@ -89,7 +93,7 @@ def find_git_dirs( path, exclude_dirs )
     exclude += "-E #{ File.join( path, dir ) } "
   end
 
-  find = "fdfind #{ exclude } --hidden --no-ignore --type d '^\.git$' #{ path }"
+  find = "#{ @fdfind } #{ exclude } --hidden --no-ignore --type d '^\.git$' #{ path }"
   dirs, err, status = Open3.capture3( find )
   dirs = dirs.split( "\n" )
 
@@ -219,7 +223,7 @@ if config[ :sortmodified ]
   #
   mtime_map = {}
   git_dirs.each do |git_dir|
-    find = "fdfind -E #{ git_dir } --hidden --type f #{ File.dirname( git_dir ) }" # .ignore here
+    find = "#{ @fdfind } -E #{ git_dir } --hidden --type f #{ File.dirname( git_dir ) }" # .ignore here
     files, err, status = Open3.capture3( find )
     files = files.split( "\n" )
     if files.any?
