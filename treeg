@@ -9,7 +9,7 @@
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2023.12.23'
+AppVersion = 'v0.2024.01.12'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
@@ -17,7 +17,7 @@ today = Date.today.to_s
 require 'open3'
 require 'etc'
 homedir = Etc.getpwuid.dir
-darwin_default_excludes = [ 'library', '.Trash' ]
+darwin_default_excludes = [ 'Library', '.Trash' ]
 
 git_dirs = []
 
