@@ -5,11 +5,11 @@
 # and prints a status summary for each
 #
 # /tri:dʒiː/
-# Wolfgang Woehl 2023
+# Wolfgang Woehl 2023-2024
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2024.01.12'
+AppVersion = 'v0.2024.01.21'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
@@ -310,7 +310,8 @@ git_dirs.each_with_index do |git_dir, git_dir_index|
     ( untracked.nonzero? and config[ :untrackeddirty ] ) or
     behind.nonzero? or
     ahead.nonzero? or
-    ( stashed.size > 0 and config[ :stasheddirty ] )
+    ( stashed.size > 0 and config[ :stasheddirty ] ) or
+    detached
 
     dirty = true
   else
