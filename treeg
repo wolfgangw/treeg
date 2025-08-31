@@ -43,13 +43,24 @@ config = {
   :exclude => [],
 }
 
+def command_exists?( command )
+  ENV[ 'PATH' ].split( File::PATH_SEPARATOR ).any? { |d| File.exist? File.join( d, command ) }
+end
+
 if RUBY_PLATFORM.match /darwin/
   darwin_default_excludes.each do |exclude|
     config[ :exclude ] << File.join( homedir, exclude )
   end
   @fdfind = 'fd'
 else
-  @fdfind = 'fdfind'
+  if command_exists?( "fdfind" )
+    @fdfind = 'fdfind'
+  elsif command_exists?( "fd" )
+    @fdfind = 'fd'
+  else
+    puts "Required file search tool fd aka fdfind not available"
+    exit 1
+  end
 end
 
 # ok, this is borderline unwieldy now
