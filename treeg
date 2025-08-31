@@ -384,7 +384,7 @@ end # git_dirs.each
 if git_dirs.size == 0
   puts "Found 0 git repositories"
   puts "Use #{ config[ :configfile ] } to provide search path(s)" unless config[ :configfile_exists ]
-  puts "Or run #{ AppName } with search path arguments" unless config[ :shellargs_present ]
+  puts "Alternatively run #{ AppName } with search path arguments" unless config[ :shellargs_present ]
 end
 
 if config[ :explanation ] and git_dirs.size > 0
