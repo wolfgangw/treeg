@@ -5,11 +5,11 @@
 # and prints a status summary for each
 #
 # /tri:dʒiː/
-# Wolfgang Woehl 2023-2024
+# Wolfgang Woehl 2023-2026
 # :wq 
 #
 AppName = File.basename( $0 )
-AppVersion = 'v0.2025.08.31'
+AppVersion = 'v0.2026.04.22'
 AppConfigFile = File.join( ENV[ 'HOME' ], ".#{ AppName }.conf" )
 #
 require 'date'
@@ -212,184 +212,189 @@ end
 
 # main
 #
-# check for configfile
-if File.exist? config[ :configfile ]
-  config[ :configfile_exists ] = true
-  config = parse_config( config )
-end
-# shellargs override paths provided in ~/.treeg.conf
-unless ARGV.empty?
-  config[ :shellargs_present ] = true
-  paths = []
-  ARGV.each do |arg|
-    if File.exist?( arg ) and File.directory?( arg )
-      paths << File.expand_path( arg )
-    else
-      puts "Skipping #{ arg.inspect } (not a directory)"
-    end
+begin
+  # check for configfile
+  if File.exist? config[ :configfile ]
+    config[ :configfile_exists ] = true
+    config = parse_config( config )
   end
-  config[ :paths ] = paths
-end
-
-# produce a sorted (a-z or by mtime) list of paths to proper git repositories
-config[ :paths ].each do |path|
-  proper_git_dirs = find_git_dirs( path, config[ :exclude ] )
-  git_dirs += proper_git_dirs
-end
-
-if config[ :sortmodified ]
-  #
-  # brute force to find the youngest touch in each git_dir (ignoring .git dir to process less files),
-  # then order git_dirs by that. ugh
-  #
-  # is there a better way to deep-find the most recently modified, possibly unstaged, file in a repo tree?
-  #
-  # also, this doesn't handle nested repos up the tree
-  #
-  mtime_map = {}
-  git_dirs.each do |git_dir|
-    find = "#{ @fdfind } -E #{ git_dir } --hidden --type f #{ File.dirname( git_dir ) }" # .ignore here
-    files, err, status = Open3.capture3( find )
-    files = files.split( "\n" )
-    if files.any?
-      most_recently_modified = ( files.sort_by { |file| File.mtime file } ).last
-      mtime_map[ git_dir ] = File.mtime most_recently_modified
-    else
-      mtime_map[ git_dir ] = File.mtime( File.dirname git_dir )
-    end
-  end
-  git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] } # sort and get rid of the timestamp after
-end
-
-if config[ :padded ]
-  maxlen_paths = git_dirs.map { |p| File.dirname( p ).gsub( homedir, '~' ).size }.max
-end
-
-# loop over all git repos
-git_dirs.each_with_index do |git_dir, git_dir_index|
-  work_tree = File.dirname git_dir
-  work_tree_short = work_tree.gsub( homedir, '~' )
-  git_base = "git -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree } "
-
-  begin
-    if config[ :checkremote ]
-      fetch_head_file_path = File.join( git_dir, 'FETCH_HEAD' )
-      if RUBY_PLATFORM.match /darwin/
-        stat_call = "stat -f %Sm -t '%Y-%m-%d' #{ fetch_head_file_path }"
+  # shellargs override paths provided in ~/.treeg.conf
+  unless ARGV.empty?
+    config[ :shellargs_present ] = true
+    paths = []
+    ARGV.each do |arg|
+      if File.exist?( arg ) and File.directory?( arg )
+        paths << File.expand_path( arg )
       else
-        stat_call = "stat -c %y #{ fetch_head_file_path }"
+        puts "Skipping #{ arg.inspect } (not a directory)"
       end
-      day_fetch_head, err, status = Open3.capture3( stat_call )
-      # keep only the leading yyyy-mm-dd (chomp the darwin output)
-      day_fetch_head = day_fetch_head.gsub( / .*\n/, '' ).chomp
-      if day_fetch_head == today
-        checkremote_msg = " Already checked remote once today for #{ work_tree_short }"
-        printf "%s\r" % checkremote_msg
+    end
+    config[ :paths ] = paths
+  end
+
+  # produce a sorted (a-z or by mtime) list of paths to proper git repositories
+  config[ :paths ].each do |path|
+    proper_git_dirs = find_git_dirs( path, config[ :exclude ] )
+    git_dirs += proper_git_dirs
+  end
+
+  if config[ :sortmodified ]
+    #
+    # brute force to find the youngest touch in each git_dir (ignoring .git dir to process less files),
+    # then order git_dirs by that. ugh
+    #
+    # is there a better way to deep-find the most recently modified, possibly unstaged, file in a repo tree?
+    #
+    # also, this doesn't handle nested repos up the tree
+    #
+    mtime_map = {}
+    git_dirs.each do |git_dir|
+      find = "#{ @fdfind } -E #{ git_dir } --hidden --type f #{ File.dirname( git_dir ) }" # .ignore here
+      files, err, status = Open3.capture3( find )
+      files = files.split( "\n" )
+      if files.any?
+        most_recently_modified = ( files.sort_by { |file| File.mtime file } ).last
+        mtime_map[ git_dir ] = File.mtime most_recently_modified
       else
-        checkremote_msg = " Checking remote this once today for #{ work_tree_short }..."
-        printf "%s\r" % checkremote_msg
-        git_checkremote_call = git_base + 'fetch'
-        git_checkremote, err, status = Open3.capture3( git_checkremote_call )
+        mtime_map[ git_dir ] = File.mtime( File.dirname git_dir )
       end
     end
-  rescue Exception => e
-    puts e.message
-    puts "Could not check remote for #{ work_tree_short }"
+    git_dirs = mtime_map.sort { |a, b| a[1] <=> b[1] }.map { |d| d[0] } # sort and get rid of the timestamp after
   end
-
-  git_status_call = git_base + 'status --branch --porcelain'
-  git_status, err, status = Open3.capture3( git_status_call )
-
-  branch, detached, behind, ahead = parse_branch( git_status )
-
-  next if branch.empty?
-
-  if branch == 'HEAD'
-    branch, err, status = Open3.capture3( git_base + 'rev-parse --short HEAD' )
-    branch.chomp!
-  end
-
-  staged, unmerged, changed, untracked = parse_status( git_status )
-
-  git_stashed_call = git_base + 'stash list --no-decorate'
-  stashed, err, status = Open3.capture3( git_stashed_call )
-
-  if
-    staged.nonzero? or
-    unmerged.nonzero? or
-    changed.nonzero? or
-    ( untracked.nonzero? and config[ :untrackeddirty ] ) or
-    behind.nonzero? or
-    ahead.nonzero? or
-    ( stashed.size > 0 and config[ :stasheddirty ] ) or
-    detached
-
-    dirty = true
-  else
-    dirty = false
-  end
-
-  if config[ :hideclean ]
-    if ! dirty and ! detached
-      if config[ :checkremote ]
-        printf "%s\r" % ( ' ' * checkremote_msg.size )
-      end
-
-      next
-    end
-  end
-
-  if config[ :showtag ] == 'dont'
-    tag, err = '', false
-  elsif config[ :showtag ] == 'contains'
-    tag, err, status = Open3.capture3( git_base + 'describe --contains' )
-  elsif config[ :showtag ] == 'last'
-    tag, err, status = Open3.capture3( git_base + 'describe --tags' )
-  elsif config[ :showtag ] == 'annotated'
-    tag, err, status = Open3.capture3( git_base + 'describe' )
-  else
-    tag, err, status = Open3.capture3( git_base + 'describe --tags --exact-match --abbrev=0' )
-  end
-
-  if err and ( err.include? 'error' or err.include? 'fatal' or err.include? 'Could not get sha1 for HEAD' )
-    tag = ''
-  end
-  tag.chomp!
-
-  summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, config[ :untrackeddirty ] )
 
   if config[ :padded ]
-    work_tree = work_tree.gsub( homedir, '~' ).rjust( maxlen_paths )
+    maxlen_paths = git_dirs.map { |p| File.dirname( p ).gsub( homedir, '~' ).size }.max
   end
-  if config[ :colored ]
-    work_tree = File.join( File.dirname( work_tree ).faint, File.basename( work_tree ) )
-    if dirty and ! detached
-      output = "#{ work_tree }: #{ summary.send( config[ :dirty ] ) }"
-    elsif dirty and detached
-      output = "#{ work_tree }: #{ summary.send( config[ :detached ] ) }"
-    elsif ! detached and ! dirty
-      output = "#{ work_tree }: #{ summary.send( config[ :clean ] ) }"
+
+  # loop over all git repos
+  git_dirs.each_with_index do |git_dir, git_dir_index|
+    work_tree = File.dirname git_dir
+    work_tree_short = work_tree.gsub( homedir, '~' )
+    git_base = "git -c core.fsmonitor= --git-dir=#{ git_dir } --work-tree=#{ work_tree } "
+
+    begin
+      if config[ :checkremote ]
+        fetch_head_file_path = File.join( git_dir, 'FETCH_HEAD' )
+        if RUBY_PLATFORM.match /darwin/
+          stat_call = "stat -f %Sm -t '%Y-%m-%d' #{ fetch_head_file_path }"
+        else
+          stat_call = "stat -c %y #{ fetch_head_file_path }"
+        end
+        day_fetch_head, err, status = Open3.capture3( stat_call )
+        # keep only the leading yyyy-mm-dd (chomp the darwin output)
+        day_fetch_head = day_fetch_head.gsub( / .*\n/, '' ).chomp
+        if day_fetch_head == today
+          checkremote_msg = " Already checked remote once today for #{ work_tree_short }"
+          printf "%s\r" % checkremote_msg
+        else
+          checkremote_msg = " Checking remote this once today for #{ work_tree_short }..."
+          printf "%s\r" % checkremote_msg
+          git_checkremote_call = git_base + 'fetch'
+          git_checkremote, err, status = Open3.capture3( git_checkremote_call )
+        end
+      end
+    rescue Exception => e
+      puts e.message
+      puts "Could not check remote for #{ work_tree_short }"
     end
-  else
-    output = "#{ work_tree }: #{ summary }"
+
+    git_status_call = git_base + 'status --branch --porcelain'
+    git_status, err, status = Open3.capture3( git_status_call )
+
+    branch, detached, behind, ahead = parse_branch( git_status )
+
+    next if branch.empty?
+
+    if branch == 'HEAD'
+      branch, err, status = Open3.capture3( git_base + 'rev-parse --short HEAD' )
+      branch.chomp!
+    end
+
+    staged, unmerged, changed, untracked = parse_status( git_status )
+
+    git_stashed_call = git_base + 'stash list --no-decorate'
+    stashed, err, status = Open3.capture3( git_stashed_call )
+
+    if
+      staged.nonzero? or
+        unmerged.nonzero? or
+        changed.nonzero? or
+        ( untracked.nonzero? and config[ :untrackeddirty ] ) or
+        behind.nonzero? or
+        ahead.nonzero? or
+        ( stashed.size > 0 and config[ :stasheddirty ] ) or
+        detached
+
+      dirty = true
+    else
+      dirty = false
+    end
+
+    if config[ :hideclean ]
+      if ! dirty and ! detached
+        if config[ :checkremote ]
+          printf "%s\r" % ( ' ' * checkremote_msg.size )
+        end
+
+        next
+      end
+    end
+
+    if config[ :showtag ] == 'dont'
+      tag, err = '', false
+    elsif config[ :showtag ] == 'contains'
+      tag, err, status = Open3.capture3( git_base + 'describe --contains' )
+    elsif config[ :showtag ] == 'last'
+      tag, err, status = Open3.capture3( git_base + 'describe --tags' )
+    elsif config[ :showtag ] == 'annotated'
+      tag, err, status = Open3.capture3( git_base + 'describe' )
+    else
+      tag, err, status = Open3.capture3( git_base + 'describe --tags --exact-match --abbrev=0' )
+    end
+
+    if err and ( err.include? 'error' or err.include? 'fatal' or err.include? 'Could not get sha1 for HEAD' )
+      tag = ''
+    end
+    tag.chomp!
+
+    summary = build_summary( branch, dirty, detached, tag, behind, ahead, staged, unmerged, changed, untracked, stashed, config[ :untrackeddirty ] )
+
+    if config[ :padded ]
+      work_tree = work_tree.gsub( homedir, '~' ).rjust( maxlen_paths )
+    end
+    if config[ :colored ]
+      work_tree = File.join( File.dirname( work_tree ).faint, File.basename( work_tree ) )
+      if dirty and ! detached
+        output = "#{ work_tree }: #{ summary.send( config[ :dirty ] ) }"
+      elsif dirty and detached
+        output = "#{ work_tree }: #{ summary.send( config[ :detached ] ) }"
+      elsif ! detached and ! dirty
+        output = "#{ work_tree }: #{ summary.send( config[ :clean ] ) }"
+      end
+    else
+      output = "#{ work_tree }: #{ summary }"
+    end
+    # clear checkremote_msg and print summary
+    if config[ :checkremote ]
+      printf "%s\r" % ( ' ' * checkremote_msg.size )
+    end
+    puts output
+
+  end # git_dirs.each
+
+  if git_dirs.size == 0
+    puts "Found 0 git repositories"
+    puts "Use #{ config[ :configfile ] } to provide search path(s)" unless config[ :configfile_exists ]
+    puts "Alternatively run #{ AppName } with search path arguments" unless config[ :shellargs_present ]
   end
-  # clear checkremote_msg and print summary
-  if config[ :checkremote ]
-    printf "%s\r" % ( ' ' * checkremote_msg.size )
+
+  if config[ :explanation ] and git_dirs.size > 0
+    puts "#{ AppName }:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed"
   end
-  puts output
 
-end # git_dirs.each
+  exit 0
 
-if git_dirs.size == 0
-  puts "Found 0 git repositories"
-  puts "Use #{ config[ :configfile ] } to provide search path(s)" unless config[ :configfile_exists ]
-  puts "Alternatively run #{ AppName } with search path arguments" unless config[ :shellargs_present ]
+rescue Interrupt => signal
+  puts "Interrupted: #{signal.inspect}"
+  exit 1
 end
-
-if config[ :explanation ] and git_dirs.size > 0
-  puts "#{ AppName }:  ✜branch  \u2605tag  ↓behind  ↑ahead  ●staged  xunmerged  ✚changed  …untracked  ⚑stashed"
-end
-
-exit 0
-
