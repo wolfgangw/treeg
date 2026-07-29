@@ -16,6 +16,7 @@ require 'date'
 today = Date.today.to_s
 require 'open3'
 require 'etc'
+require 'io/console'
 homedir = Etc.getpwuid.dir
 darwin_default_excludes = [ 'Library', '.Trash' ]
 
@@ -45,6 +46,26 @@ config = {
 
 def command_exists?( command )
   ENV[ 'PATH' ].split( File::PATH_SEPARATOR ).any? { |d| File.exist? File.join( d, command ) }
+end
+
+def show_progress( message )
+  return unless $stdout.tty?
+
+  columns = IO.console&.winsize&.last
+  message = message.each_char.take( columns - 1 ).join if columns and columns > 1
+  printf "\r\e[2K%s", message
+  $stdout.flush
+rescue IOError, SystemCallError
+  # Progress is cosmetic; failure to query or update the terminal is harmless.
+end
+
+def clear_progress
+  return unless $stdout.tty?
+
+  print "\r\e[2K"
+  $stdout.flush
+rescue IOError, SystemCallError
+  # Progress is cosmetic; failure to clear it is harmless.
 end
 
 if RUBY_PLATFORM.match /darwin/
@@ -113,19 +134,24 @@ end
 def find_git_dirs( path, exclude_dirs )
   git_dirs = []
 
-  exclude = ''
+  find = [ @fdfind ]
   exclude_dirs.each do |dir|
-    exclude += "-E '#{ File.basename dir }' "
+    find += [ '-E', File.basename( dir ) ]
   end
+  find += [ '--hidden', '--no-ignore', '--type', 'd', '^\.git$', path ]
 
-  find = "#{ @fdfind } #{ exclude } --hidden --no-ignore --type d '^\.git$' #{ path }"
-  dirs, err, status = Open3.capture3( find )
+  dirs, err, status = Open3.capture3( *find )
   dirs = dirs.split( "\n" )
 
-  dirs.each_with_index do |dir, index|
-    check = "2>/dev/null git -C #{ File.dirname( dir ) } rev-parse"
-    is_repo = system( check )
-    if is_repo
+  dirs.each do |dir|
+    dir = dir.delete_suffix( File::SEPARATOR )
+    validated_git_dir, err, status = Open3.capture3(
+      'git',
+      '-c', 'core.fsmonitor=',
+      "--git-dir=#{ dir }",
+      'rev-parse', '--git-dir'
+    )
+    if status.success? and File.expand_path( validated_git_dir.chomp ) == File.expand_path( dir )
       git_dirs << dir
     else
       puts "Skipping #{ dir } (not a git repository)"
@@ -285,15 +311,16 @@ begin
         day_fetch_head = day_fetch_head.gsub( / .*\n/, '' ).chomp
         if day_fetch_head == today
           checkremote_msg = " Already checked remote once today for #{ work_tree_short }"
-          printf "%s\r" % checkremote_msg
+          show_progress( checkremote_msg )
         else
           checkremote_msg = " Checking remote this once today for #{ work_tree_short }..."
-          printf "%s\r" % checkremote_msg
+          show_progress( checkremote_msg )
           git_checkremote_call = git_base + 'fetch'
           git_checkremote, err, status = Open3.capture3( git_checkremote_call )
         end
       end
     rescue Exception => e
+      clear_progress
       puts e.message
       puts "Could not check remote for #{ work_tree_short }"
     end
@@ -301,9 +328,19 @@ begin
     git_status_call = git_base + 'status --branch --porcelain'
     git_status, err, status = Open3.capture3( git_status_call )
 
+    unless status.success?
+      clear_progress if config[ :checkremote ]
+      error = err.lines.first&.chomp
+      puts "Skipping #{ work_tree_short } (could not read Git status#{ error.nil? || error.empty? ? '' : ': ' + error })"
+      next
+    end
+
     branch, detached, behind, ahead = parse_branch( git_status )
 
-    next if branch.empty?
+    if branch.empty?
+      clear_progress if config[ :checkremote ]
+      next
+    end
 
     if branch == 'HEAD'
       branch, err, status = Open3.capture3( git_base + 'rev-parse --short HEAD' )
@@ -333,7 +370,7 @@ begin
     if config[ :hideclean ]
       if ! dirty and ! detached
         if config[ :checkremote ]
-          printf "%s\r" % ( ' ' * checkremote_msg.size )
+          clear_progress
         end
 
         next
@@ -376,7 +413,7 @@ begin
     end
     # clear checkremote_msg and print summary
     if config[ :checkremote ]
-      printf "%s\r" % ( ' ' * checkremote_msg.size )
+      clear_progress
     end
     puts output
 
@@ -395,6 +432,7 @@ begin
   exit 0
 
 rescue Interrupt => signal
+  clear_progress
   puts "Interrupted: #{signal.inspect}"
   exit 1
 end
